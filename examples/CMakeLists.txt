@@ -6,22 +6,9 @@ find_package(Threads REQUIRED)
 
 # ...
 
-# common
+# flags
 
-set(TARGET common)
-
-add_library(${TARGET} OBJECT
-    common.h
-    common.cpp
-    )
-
-if (BUILD_SHARED_LIBS)
-    set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
-
-target_include_directories(${TARGET} PUBLIC .)
-target_compile_features(${TARGET} PUBLIC cxx_std_11)
-target_link_libraries(${TARGET} PRIVATE llama)
+llama_add_compile_flags()
 
 # examples
 
@@ -29,21 +16,58 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 if (EMSCRIPTEN)
 else()
-    add_subdirectory(main)
-    add_subdirectory(quantize)
-    add_subdirectory(quantize-stats)
-    add_subdirectory(perplexity)
+    add_subdirectory(batched-bench)
+    add_subdirectory(batched)
     add_subdirectory(embedding)
-    add_subdirectory(save-load-state)
-    add_subdirectory(benchmark)
-    add_subdirectory(baby-llama)
-    add_subdirectory(train-text-from-scratch)
-    add_subdirectory(simple)
-    add_subdirectory(embd-input)
-    if (LLAMA_METAL)
-        add_subdirectory(metal)
+    add_subdirectory(eval-callback)
+
+    if (NOT WIN32)
+        # disabled on Windows because it uses internal functions not exported with LLAMA_API
+        add_subdirectory(gbnf-validator)
     endif()
+
+    add_subdirectory(gguf-hash)
+    add_subdirectory(gguf-split)
+    add_subdirectory(gguf)
+    add_subdirectory(gritlm)
+    add_subdirectory(imatrix)
+    add_subdirectory(infill)
+    add_subdirectory(llama-bench)
+    add_subdirectory(lookahead)
+    add_subdirectory(lookup)
+    add_subdirectory(main)
+    add_subdirectory(parallel)
+    add_subdirectory(passkey)
+    add_subdirectory(perplexity)
+    add_subdirectory(quantize)
+    add_subdirectory(retrieval)
     if (LLAMA_BUILD_SERVER)
         add_subdirectory(server)
+    endif()
+    add_subdirectory(save-load-state)
+    add_subdirectory(run)
+    add_subdirectory(simple)
+    add_subdirectory(simple-chat)
+    add_subdirectory(speculative)
+    add_subdirectory(speculative-simple)
+    add_subdirectory(tokenize)
+    add_subdirectory(tts)
+    add_subdirectory(gen-docs)
+    if (NOT GGML_BACKEND_DL)
+        # these examples use the backends directly and cannot be built with dynamic loading
+        add_subdirectory(convert-llama2c-to-ggml)
+        add_subdirectory(cvector-generator)
+        add_subdirectory(export-lora)
+        if (NOT WIN32)
+            # disabled on Windows because it uses internal functions not exported with LLAMA_API
+            add_subdirectory(quantize-stats)
+        endif()
+        add_subdirectory(llava)
+        if (GGML_RPC)
+            add_subdirectory(rpc)
+        endif()
+        if (GGML_SYCL)
+            add_subdirectory(sycl)
+        endif()
     endif()
 endif()

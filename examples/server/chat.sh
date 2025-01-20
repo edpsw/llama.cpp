@@ -32,6 +32,7 @@ tokenize() {
         --silent \
         --request POST \
         --url "${API_URL}/tokenize" \
+        --header "Content-Type: application/json" \
         --data-raw "$(jq -ns --arg content "$1" '{content:$content}')" \
     | jq '.tokens[]'
 }
@@ -47,6 +48,7 @@ chat_completion() {
         top_p: 0.9,
         n_keep: $n_keep,
         n_predict: 256,
+        cache_prompt: true,
         stop: ["\n### Human:"],
         stream: true
     }')"
@@ -64,6 +66,7 @@ chat_completion() {
         --no-buffer \
         --request POST \
         --url "${API_URL}/completion" \
+        --header "Content-Type: application/json" \
         --data-raw "${DATA}")
 
     printf "\n"

@@ -2,611 +2,504 @@
 
 ![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
 
-[![Actions Status](https://github.com/ggerganov/llama.cpp/workflows/CI/badge.svg)](https://github.com/ggerganov/llama.cpp/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Server](https://github.com/ggerganov/llama.cpp/actions/workflows/server.yml/badge.svg)](https://github.com/ggerganov/llama.cpp/actions/workflows/server.yml)
 
-[Roadmap](https://github.com/users/ggerganov/projects/7) / [Manifesto](https://github.com/ggerganov/llama.cpp/discussions/205) / [ggml](https://github.com/ggerganov/ggml)
+[Roadmap](https://github.com/users/ggerganov/projects/7) / [Project status](https://github.com/ggerganov/llama.cpp/discussions/3471) / [Manifesto](https://github.com/ggerganov/llama.cpp/discussions/205) / [ggml](https://github.com/ggerganov/ggml)
 
-Inference of [LLaMA](https://arxiv.org/abs/2302.13971) model in pure C/C++
+Inference of Meta's [LLaMA](https://arxiv.org/abs/2302.13971) model (and others) in pure C/C++
 
-**Hot topics:**
+## Recent API changes
 
-- k-quants now support super-block size of 64: https://github.com/ggerganov/llama.cpp/pull/2001
-- New roadmap: https://github.com/users/ggerganov/projects/7
-- Azure CI brainstorming: https://github.com/ggerganov/llama.cpp/discussions/1985
-- p1 : LLM-based code completion engine at the edge : https://github.com/ggml-org/p1/discussions/1
+- [Changelog for `libllama` API](https://github.com/ggerganov/llama.cpp/issues/9289)
+- [Changelog for `llama-server` REST API](https://github.com/ggerganov/llama.cpp/issues/9291)
 
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#description">Description</a>
-    </li>
-    <li>
-      <a href="#usage">Usage</a>
-      <ul>
-        <li><a href="#get-the-code">Get the Code</a></li>
-        <li><a href="#build">Build</a></li>
-        <li><a href="#blas-build">BLAS Build</a></li>
-        <li><a href="#prepare-data--run">Prepare Data & Run</a></li>
-        <li><a href="#memorydisk-requirements">Memory/Disk Requirements</a></li>
-        <li><a href="#quantization">Quantization</a></li>
-        <li><a href="#interactive-mode">Interactive mode</a></li>
-        <li><a href="#instruction-mode-with-alpaca">Instruction mode with Alpaca</a></li>
-        <li><a href="#using-openllama">Using OpenLLaMA</a></li>
-        <li><a href="#using-gpt4all">Using GPT4All</a></li>
-        <li><a href="#using-pygmalion-7b--metharme-7b">Using Pygmalion 7B & Metharme 7B</a></li>
-        <li><a href="#obtaining-the-facebook-llama-original-model-and-stanford-alpaca-model-data">Obtaining the Facebook LLaMA original model and Stanford Alpaca model data</a></li>
-        <li><a href="#verifying-the-model-files">Verifying the model files</a></li>
-        <li><a href="#seminal-papers-and-background-on-the-models">Seminal papers and background on the models</a></li>
-        <li><a href="#perplexity-measuring-model-quality">Perplexity (measuring model quality)</a></li>
-        <li><a href="#android">Android</a></li>
-        <li><a href="#docker">Docker</a></li>
-      </ul>
-    </li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#coding-guidelines">Coding guidelines</a></li>
-    <li><a href="#docs">Docs</a></li>
-  </ol>
-</details>
+## Hot topics
+
+- **Introducing GGUF-my-LoRA** https://github.com/ggerganov/llama.cpp/discussions/10123
+- Hugging Face Inference Endpoints now support GGUF out of the box! https://github.com/ggerganov/llama.cpp/discussions/9669
+- Hugging Face GGUF editor: [discussion](https://github.com/ggerganov/llama.cpp/discussions/9268) | [tool](https://huggingface.co/spaces/CISCai/gguf-editor)
+
+----
 
 ## Description
 
-The main goal of `llama.cpp` is to run the LLaMA model using 4-bit integer quantization on a MacBook
+The main goal of `llama.cpp` is to enable LLM inference with minimal setup and state-of-the-art performance on a wide
+range of hardware - locally and in the cloud.
 
-- Plain C/C++ implementation without dependencies
-- Apple silicon first-class citizen - optimized via ARM NEON, Accelerate and Metal frameworks
-- AVX, AVX2 and AVX512 support for x86 architectures
-- Mixed F16 / F32 precision
-- 4-bit, 5-bit and 8-bit integer quantization support
-- Supports OpenBLAS/Apple BLAS/ARM Performance Lib/ATLAS/BLIS/Intel MKL/NVHPC/ACML/SCSL/SGIMATH and [more](https://cmake.org/cmake/help/latest/module/FindBLAS.html#blas-lapack-vendors) in BLAS
-- cuBLAS and CLBlast support
+- Plain C/C++ implementation without any dependencies
+- Apple silicon is a first-class citizen - optimized via ARM NEON, Accelerate and Metal frameworks
+- AVX, AVX2, AVX512 and AMX support for x86 architectures
+- 1.5-bit, 2-bit, 3-bit, 4-bit, 5-bit, 6-bit, and 8-bit integer quantization for faster inference and reduced memory use
+- Custom CUDA kernels for running LLMs on NVIDIA GPUs (support for AMD GPUs via HIP and Moore Threads MTT GPUs via MUSA)
+- Vulkan and SYCL backend support
+- CPU+GPU hybrid inference to partially accelerate models larger than the total VRAM capacity
 
-The original implementation of `llama.cpp` was [hacked in an evening](https://github.com/ggerganov/llama.cpp/issues/33#issuecomment-1465108022).
-Since then, the project has improved significantly thanks to many contributions. This project is for educational purposes and serves
-as the main playground for developing new features for the [ggml](https://github.com/ggerganov/ggml) library.
+The `llama.cpp` project is the main playground for developing new features for the [ggml](https://github.com/ggerganov/ggml) library.
 
-**Supported platforms:**
+<details>
+<summary>Models</summary>
 
-- [X] Mac OS
-- [X] Linux
-- [X] Windows (via CMake)
-- [X] Docker
+Typically finetunes of the base models below are supported as well.
 
-**Supported models:**
+Instructions for adding support for new models: [HOWTO-add-model.md](docs/development/HOWTO-add-model.md)
+
+#### Text-only
 
 - [X] LLaMA 🦙
-- [X] [Alpaca](https://github.com/ggerganov/llama.cpp#instruction-mode-with-alpaca)
-- [X] [GPT4All](https://github.com/ggerganov/llama.cpp#using-gpt4all)
-- [X] [Chinese LLaMA / Alpaca](https://github.com/ymcui/Chinese-LLaMA-Alpaca)
+- [x] LLaMA 2 🦙🦙
+- [x] LLaMA 3 🦙🦙🦙
+- [X] [Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1)
+- [x] [Mixtral MoE](https://huggingface.co/models?search=mistral-ai/Mixtral)
+- [x] [DBRX](https://huggingface.co/databricks/dbrx-instruct)
+- [X] [Falcon](https://huggingface.co/models?search=tiiuae/falcon)
+- [X] [Chinese LLaMA / Alpaca](https://github.com/ymcui/Chinese-LLaMA-Alpaca) and [Chinese LLaMA-2 / Alpaca-2](https://github.com/ymcui/Chinese-LLaMA-Alpaca-2)
 - [X] [Vigogne (French)](https://github.com/bofenghuang/vigogne)
-- [X] [Vicuna](https://github.com/ggerganov/llama.cpp/discussions/643#discussioncomment-5533894)
+- [X] [BERT](https://github.com/ggerganov/llama.cpp/pull/5423)
 - [X] [Koala](https://bair.berkeley.edu/blog/2023/04/03/koala/)
-- [X] [OpenBuddy 🐶 (Multilingual)](https://github.com/OpenBuddy/OpenBuddy)
-- [X] [Pygmalion 7B / Metharme 7B](#using-pygmalion-7b--metharme-7b)
-- [X] [WizardLM](https://github.com/nlpxucan/WizardLM)
-- [X] [Baichuan-7B](https://huggingface.co/baichuan-inc/baichuan-7B)
+- [X] [Baichuan 1 & 2](https://huggingface.co/models?search=baichuan-inc/Baichuan) + [derivations](https://huggingface.co/hiyouga/baichuan-7b-sft)
+- [X] [Aquila 1 & 2](https://huggingface.co/models?search=BAAI/Aquila)
+- [X] [Starcoder models](https://github.com/ggerganov/llama.cpp/pull/3187)
+- [X] [Refact](https://huggingface.co/smallcloudai/Refact-1_6B-fim)
+- [X] [MPT](https://github.com/ggerganov/llama.cpp/pull/3417)
+- [X] [Bloom](https://github.com/ggerganov/llama.cpp/pull/3553)
+- [x] [Yi models](https://huggingface.co/models?search=01-ai/Yi)
+- [X] [StableLM models](https://huggingface.co/stabilityai)
+- [x] [Deepseek models](https://huggingface.co/models?search=deepseek-ai/deepseek)
+- [x] [Qwen models](https://huggingface.co/models?search=Qwen/Qwen)
+- [x] [PLaMo-13B](https://github.com/ggerganov/llama.cpp/pull/3557)
+- [x] [Phi models](https://huggingface.co/models?search=microsoft/phi)
+- [x] [PhiMoE](https://github.com/ggerganov/llama.cpp/pull/11003)
+- [x] [GPT-2](https://huggingface.co/gpt2)
+- [x] [Orion 14B](https://github.com/ggerganov/llama.cpp/pull/5118)
+- [x] [InternLM2](https://huggingface.co/models?search=internlm2)
+- [x] [CodeShell](https://github.com/WisdomShell/codeshell)
+- [x] [Gemma](https://ai.google.dev/gemma)
+- [x] [Mamba](https://github.com/state-spaces/mamba)
+- [x] [Grok-1](https://huggingface.co/keyfan/grok-1-hf)
+- [x] [Xverse](https://huggingface.co/models?search=xverse)
+- [x] [Command-R models](https://huggingface.co/models?search=CohereForAI/c4ai-command-r)
+- [x] [SEA-LION](https://huggingface.co/models?search=sea-lion)
+- [x] [GritLM-7B](https://huggingface.co/GritLM/GritLM-7B) + [GritLM-8x7B](https://huggingface.co/GritLM/GritLM-8x7B)
+- [x] [OLMo](https://allenai.org/olmo)
+- [x] [OLMo 2](https://allenai.org/olmo)
+- [x] [OLMoE](https://huggingface.co/allenai/OLMoE-1B-7B-0924)
+- [x] [Granite models](https://huggingface.co/collections/ibm-granite/granite-code-models-6624c5cec322e4c148c8b330)
+- [x] [GPT-NeoX](https://github.com/EleutherAI/gpt-neox) + [Pythia](https://github.com/EleutherAI/pythia)
+- [x] [Snowflake-Arctic MoE](https://huggingface.co/collections/Snowflake/arctic-66290090abe542894a5ac520)
+- [x] [Smaug](https://huggingface.co/models?search=Smaug)
+- [x] [Poro 34B](https://huggingface.co/LumiOpen/Poro-34B)
+- [x] [Bitnet b1.58 models](https://huggingface.co/1bitLLM)
+- [x] [Flan T5](https://huggingface.co/models?search=flan-t5)
+- [x] [Open Elm models](https://huggingface.co/collections/apple/openelm-instruct-models-6619ad295d7ae9f868b759ca)
+- [x] [ChatGLM3-6b](https://huggingface.co/THUDM/chatglm3-6b) + [ChatGLM4-9b](https://huggingface.co/THUDM/glm-4-9b)
+- [x] [SmolLM](https://huggingface.co/collections/HuggingFaceTB/smollm-6695016cad7167254ce15966)
+- [x] [EXAONE-3.0-7.8B-Instruct](https://huggingface.co/LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct)
+- [x] [FalconMamba Models](https://huggingface.co/collections/tiiuae/falconmamba-7b-66b9a580324dd1598b0f6d4a)
+- [x] [Jais](https://huggingface.co/inceptionai/jais-13b-chat)
+- [x] [Bielik-11B-v2.3](https://huggingface.co/collections/speakleash/bielik-11b-v23-66ee813238d9b526a072408a)
+- [x] [RWKV-6](https://github.com/BlinkDL/RWKV-LM)
+- [x] [QRWKV-6](https://huggingface.co/recursal/QRWKV6-32B-Instruct-Preview-v0.1)
+- [x] [GigaChat-20B-A3B](https://huggingface.co/ai-sage/GigaChat-20B-A3B-instruct)
 
-**Bindings:**
+#### Multimodal
+
+- [x] [LLaVA 1.5 models](https://huggingface.co/collections/liuhaotian/llava-15-653aac15d994e992e2677a7e), [LLaVA 1.6 models](https://huggingface.co/collections/liuhaotian/llava-16-65b9e40155f60fd046a5ccf2)
+- [x] [BakLLaVA](https://huggingface.co/models?search=SkunkworksAI/Bakllava)
+- [x] [Obsidian](https://huggingface.co/NousResearch/Obsidian-3B-V0.5)
+- [x] [ShareGPT4V](https://huggingface.co/models?search=Lin-Chen/ShareGPT4V)
+- [x] [MobileVLM 1.7B/3B models](https://huggingface.co/models?search=mobileVLM)
+- [x] [Yi-VL](https://huggingface.co/models?search=Yi-VL)
+- [x] [Mini CPM](https://huggingface.co/models?search=MiniCPM)
+- [x] [Moondream](https://huggingface.co/vikhyatk/moondream2)
+- [x] [Bunny](https://github.com/BAAI-DCAI/Bunny)
+- [x] [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d)
+
+</details>
+
+<details>
+<summary>Bindings</summary>
 
 - Python: [abetlen/llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
 - Go: [go-skynet/go-llama.cpp](https://github.com/go-skynet/go-llama.cpp)
-- Node.js: [hlhr202/llama-node](https://github.com/hlhr202/llama-node)
+- Node.js: [withcatai/node-llama-cpp](https://github.com/withcatai/node-llama-cpp)
+- JS/TS (llama.cpp server client): [lgrammel/modelfusion](https://modelfusion.dev/integration/model-provider/llamacpp)
+- JS/TS (Programmable Prompt Engine CLI): [offline-ai/cli](https://github.com/offline-ai/cli)
+- JavaScript/Wasm (works in browser): [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm)
+- Typescript/Wasm (nicer API, available on npm): [ngxson/wllama](https://github.com/ngxson/wllama)
 - Ruby: [yoshoku/llama_cpp.rb](https://github.com/yoshoku/llama_cpp.rb)
+- Rust (more features): [edgenai/llama_cpp-rs](https://github.com/edgenai/llama_cpp-rs)
+- Rust (nicer API): [mdrokz/rust-llama.cpp](https://github.com/mdrokz/rust-llama.cpp)
+- Rust (more direct bindings): [utilityai/llama-cpp-rs](https://github.com/utilityai/llama-cpp-rs)
 - C#/.NET: [SciSharp/LLamaSharp](https://github.com/SciSharp/LLamaSharp)
+- C#/VB.NET (more features - community license): [LM-Kit.NET](https://docs.lm-kit.com/lm-kit-net/index.html)
 - Scala 3: [donderom/llm4s](https://github.com/donderom/llm4s)
+- Clojure: [phronmophobic/llama.clj](https://github.com/phronmophobic/llama.clj)
+- React Native: [mybigday/llama.rn](https://github.com/mybigday/llama.rn)
+- Java: [kherud/java-llama.cpp](https://github.com/kherud/java-llama.cpp)
+- Zig: [deins/llama.cpp.zig](https://github.com/Deins/llama.cpp.zig)
+- Flutter/Dart: [netdur/llama_cpp_dart](https://github.com/netdur/llama_cpp_dart)
+- Flutter: [xuegao-tzx/Fllama](https://github.com/xuegao-tzx/Fllama)
+- PHP (API bindings and features built on top of llama.cpp): [distantmagic/resonance](https://github.com/distantmagic/resonance) [(more info)](https://github.com/ggerganov/llama.cpp/pull/6326)
+- Guile Scheme: [guile_llama_cpp](https://savannah.nongnu.org/projects/guile-llama-cpp)
+- Swift [srgtuszy/llama-cpp-swift](https://github.com/srgtuszy/llama-cpp-swift)
+- Swift [ShenghaiWang/SwiftLlama](https://github.com/ShenghaiWang/SwiftLlama)
 
-**UI:**
+</details>
 
-- [nat/openplayground](https://github.com/nat/openplayground)
-- [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)
+<details>
+<summary>UIs</summary>
 
----
+*(to have a project listed here, it should clearly state that it depends on `llama.cpp`)*
 
-Here is a typical run using LLaMA-7B:
+- [AI Sublime Text plugin](https://github.com/yaroslavyaroslav/OpenAI-sublime-text) (MIT)
+- [cztomsik/ava](https://github.com/cztomsik/ava) (MIT)
+- [Dot](https://github.com/alexpinel/Dot) (GPL)
+- [eva](https://github.com/ylsdamxssjxxdd/eva) (MIT)
+- [iohub/collama](https://github.com/iohub/coLLaMA) (Apache-2.0)
+- [janhq/jan](https://github.com/janhq/jan) (AGPL)
+- [KanTV](https://github.com/zhouwg/kantv?tab=readme-ov-file) (Apache-2.0)
+- [KodiBot](https://github.com/firatkiral/kodibot) (GPL)
+- [llama.vim](https://github.com/ggml-org/llama.vim) (MIT)
+- [LARS](https://github.com/abgulati/LARS) (AGPL)
+- [Llama Assistant](https://github.com/vietanhdev/llama-assistant) (GPL)
+- [LLMFarm](https://github.com/guinmoon/LLMFarm?tab=readme-ov-file) (MIT)
+- [LLMUnity](https://github.com/undreamai/LLMUnity) (MIT)
+- [LMStudio](https://lmstudio.ai/) (proprietary)
+- [LocalAI](https://github.com/mudler/LocalAI) (MIT)
+- [LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp) (AGPL)
+- [MindMac](https://mindmac.app) (proprietary)
+- [MindWorkAI/AI-Studio](https://github.com/MindWorkAI/AI-Studio) (FSL-1.1-MIT)
+- [Mobile-Artificial-Intelligence/maid](https://github.com/Mobile-Artificial-Intelligence/maid) (MIT)
+- [Mozilla-Ocho/llamafile](https://github.com/Mozilla-Ocho/llamafile) (Apache-2.0)
+- [nat/openplayground](https://github.com/nat/openplayground) (MIT)
+- [nomic-ai/gpt4all](https://github.com/nomic-ai/gpt4all) (MIT)
+- [ollama/ollama](https://github.com/ollama/ollama) (MIT)
+- [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui) (AGPL)
+- [PocketPal AI](https://github.com/a-ghorbani/pocketpal-ai) (MIT)
+- [psugihara/FreeChat](https://github.com/psugihara/FreeChat) (MIT)
+- [ptsochantaris/emeltal](https://github.com/ptsochantaris/emeltal) (MIT)
+- [pythops/tenere](https://github.com/pythops/tenere) (AGPL)
+- [ramalama](https://github.com/containers/ramalama) (MIT)
+- [semperai/amica](https://github.com/semperai/amica) (MIT)
+- [withcatai/catai](https://github.com/withcatai/catai) (MIT)
 
-```java
-make -j && ./main -m ./models/7B/ggml-model-q4_0.bin -p "Building a website can be done in 10 simple steps:" -n 512
-I llama.cpp build info:
-I UNAME_S:  Darwin
-I UNAME_P:  arm
-I UNAME_M:  arm64
-I CFLAGS:   -I.              -O3 -DNDEBUG -std=c11   -fPIC -pthread -DGGML_USE_ACCELERATE
-I CXXFLAGS: -I. -I./examples -O3 -DNDEBUG -std=c++11 -fPIC -pthread
-I LDFLAGS:   -framework Accelerate
-I CC:       Apple clang version 14.0.0 (clang-1400.0.29.202)
-I CXX:      Apple clang version 14.0.0 (clang-1400.0.29.202)
+</details>
 
-make: Nothing to be done for `default'.
-main: seed = 1678486056
-llama_model_load: loading model from './models/7B/ggml-model-q4_0.bin' - please wait ...
-llama_model_load: n_vocab = 32000
-llama_model_load: n_ctx   = 512
-llama_model_load: n_embd  = 4096
-llama_model_load: n_mult  = 256
-llama_model_load: n_head  = 32
-llama_model_load: n_layer = 32
-llama_model_load: n_rot   = 128
-llama_model_load: f16     = 2
-llama_model_load: n_ff    = 11008
-llama_model_load: ggml ctx size = 4529.34 MB
-llama_model_load: memory_size =   512.00 MB, n_mem = 16384
-llama_model_load: .................................... done
-llama_model_load: model size =  4017.27 MB / num tensors = 291
+<details>
+<summary>Tools</summary>
 
-main: prompt: 'Building a website can be done in 10 simple steps:'
-main: number of tokens in prompt = 15
-     1 -> ''
-  8893 -> 'Build'
-   292 -> 'ing'
-   263 -> ' a'
-  4700 -> ' website'
-   508 -> ' can'
-   367 -> ' be'
-  2309 -> ' done'
-   297 -> ' in'
- 29871 -> ' '
- 29896 -> '1'
- 29900 -> '0'
-  2560 -> ' simple'
-  6576 -> ' steps'
- 29901 -> ':'
+- [akx/ggify](https://github.com/akx/ggify) – download PyTorch models from HuggingFace Hub and convert them to GGML
+- [akx/ollama-dl](https://github.com/akx/ollama-dl) – download models from the Ollama library to be used directly with llama.cpp
+- [crashr/gppm](https://github.com/crashr/gppm) – launch llama.cpp instances utilizing NVIDIA Tesla P40 or P100 GPUs with reduced idle power consumption
+- [gpustack/gguf-parser](https://github.com/gpustack/gguf-parser-go/tree/main/cmd/gguf-parser) - review/check the GGUF file and estimate the memory usage
+- [Styled Lines](https://marketplace.unity.com/packages/tools/generative-ai/styled-lines-llama-cpp-model-292902) (proprietary licensed, async wrapper of inference part for game development in Unity3d with pre-built Mobile and Web platform wrappers and a model example)
 
-sampling parameters: temp = 0.800000, top_k = 40, top_p = 0.950000
+</details>
 
+<details>
+<summary>Infrastructure</summary>
 
-Building a website can be done in 10 simple steps:
-1) Select a domain name and web hosting plan
-2) Complete a sitemap
-3) List your products
-4) Write product descriptions
-5) Create a user account
-6) Build the template
-7) Start building the website
-8) Advertise the website
-9) Provide email support
-10) Submit the website to search engines
-A website is a collection of web pages that are formatted with HTML. HTML is the code that defines what the website looks like and how it behaves.
-The HTML code is formatted into a template or a format. Once this is done, it is displayed on the user's browser.
-The web pages are stored in a web server. The web server is also called a host. When the website is accessed, it is retrieved from the server and displayed on the user's computer.
-A website is known as a website when it is hosted. This means that it is displayed on a host. The host is usually a web server.
-A website can be displayed on different browsers. The browsers are basically the software that renders the website on the user's screen.
-A website can also be viewed on different devices such as desktops, tablets and smartphones.
-Hence, to have a website displayed on a browser, the website must be hosted.
-A domain name is an address of a website. It is the name of the website.
-The website is known as a website when it is hosted. This means that it is displayed on a host. The host is usually a web server.
-A website can be displayed on different browsers. The browsers are basically the software that renders the website on the user’s screen.
-A website can also be viewed on different devices such as desktops, tablets and smartphones. Hence, to have a website displayed on a browser, the website must be hosted.
-A domain name is an address of a website. It is the name of the website.
-A website is an address of a website. It is a collection of web pages that are formatted with HTML. HTML is the code that defines what the website looks like and how it behaves.
-The HTML code is formatted into a template or a format. Once this is done, it is displayed on the user’s browser.
-A website is known as a website when it is hosted
+- [Paddler](https://github.com/distantmagic/paddler) - Stateful load balancer custom-tailored for llama.cpp
+- [GPUStack](https://github.com/gpustack/gpustack) - Manage GPU clusters for running LLMs
+- [llama_cpp_canister](https://github.com/onicai/llama_cpp_canister) - llama.cpp as a smart contract on the Internet Computer, using WebAssembly
+- [llama-swap](https://github.com/mostlygeek/llama-swap) - transparent proxy that adds automatic model switching with llama-server
+- [Kalavai](https://github.com/kalavai-net/kalavai-client) - Crowdsource end to end LLM deployment at any scale
 
-main: mem per token = 14434244 bytes
-main:     load time =  1332.48 ms
-main:   sample time =  1081.40 ms
-main:  predict time = 31378.77 ms / 61.41 ms per token
-main:    total time = 34036.74 ms
-```
+</details>
 
-And here is another demo of running both LLaMA-7B and [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on a single M1 Pro MacBook:
+<details>
+<summary>Games</summary>
 
-https://user-images.githubusercontent.com/1991296/224442907-7693d4be-acaa-4e01-8b4f-add84093ffff.mp4
+- [Lucy's Labyrinth](https://github.com/MorganRO8/Lucys_Labyrinth) - A simple maze game where agents controlled by an AI model will try to trick you.
 
-## Usage
+</details>
 
-Here are the steps for the LLaMA-7B model.
+## Supported backends
 
-### Get the Code
+| Backend | Target devices |
+| --- | --- |
+| [Metal](docs/build.md#metal-build) | Apple Silicon |
+| [BLAS](docs/build.md#blas-build) | All |
+| [BLIS](docs/backend/BLIS.md) | All |
+| [SYCL](docs/backend/SYCL.md) | Intel and Nvidia GPU |
+| [MUSA](docs/build.md#musa) | Moore Threads MTT GPU |
+| [CUDA](docs/build.md#cuda) | Nvidia GPU |
+| [HIP](docs/build.md#hip) | AMD GPU |
+| [Vulkan](docs/build.md#vulkan) | GPU |
+| [CANN](docs/build.md#cann) | Ascend NPU |
 
-```bash
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-```
+## Building the project
 
-### Build
+The main product of this project is the `llama` library. Its C-style interface can be found in [include/llama.h](include/llama.h).
+The project also includes many example programs and tools using the `llama` library. The examples range from simple, minimal code snippets to sophisticated sub-projects such as an OpenAI-compatible HTTP server. Possible methods for obtaining the binaries:
 
-In order to build llama.cpp you have three different options.
+- Clone this repository and build locally, see [how to build](docs/build.md)
+- On MacOS or Linux, install `llama.cpp` via [brew, flox or nix](docs/install.md)
+- Use a Docker image, see [documentation for Docker](docs/docker.md)
+- Download pre-built binaries from [releases](https://github.com/ggerganov/llama.cpp/releases)
 
-- Using `make`:
-  - On Linux or MacOS:
+## Obtaining and quantizing models
 
-      ```bash
-      make
-      ```
+The [Hugging Face](https://huggingface.co) platform hosts a [number of LLMs](https://huggingface.co/models?library=gguf&sort=trending) compatible with `llama.cpp`:
 
-  - On Windows:
+- [Trending](https://huggingface.co/models?library=gguf&sort=trending)
+- [LLaMA](https://huggingface.co/models?sort=trending&search=llama+gguf)
 
-    1. Download the latest fortran version of [w64devkit](https://github.com/skeeto/w64devkit/releases).
-    2. Extract `w64devkit` on your pc.
-    3. Run `w64devkit.exe`.
-    4. Use the `cd` command to reach the `llama.cpp` folder.
-    5. From here you can run:
-        ```bash
-        make
-        ```
+You can either manually download the GGUF file or directly use any `llama.cpp`-compatible models from Hugging Face by using this CLI argument: `-hf <user>/<model>[:quant]`
 
-- Using `CMake`:
+After downloading a model, use the CLI tools to run it locally - see below.
 
-    ```bash
-    mkdir build
-    cd build
-    cmake ..
-    cmake --build . --config Release
-    ```
+`llama.cpp` requires the model to be stored in the [GGUF](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) file format. Models in other data formats can be converted to GGUF using the `convert_*.py` Python scripts in this repo.
 
-- Using `Zig`:
+The Hugging Face platform provides a variety of online tools for converting, quantizing and hosting models with `llama.cpp`:
+
+- Use the [GGUF-my-repo space](https://huggingface.co/spaces/ggml-org/gguf-my-repo) to convert to GGUF format and quantize model weights to smaller sizes
+- Use the [GGUF-my-LoRA space](https://huggingface.co/spaces/ggml-org/gguf-my-lora) to convert LoRA adapters to GGUF format (more info: https://github.com/ggerganov/llama.cpp/discussions/10123)
+- Use the [GGUF-editor space](https://huggingface.co/spaces/CISCai/gguf-editor) to edit GGUF meta data in the browser (more info: https://github.com/ggerganov/llama.cpp/discussions/9268)
+- Use the [Inference Endpoints](https://ui.endpoints.huggingface.co/) to directly host `llama.cpp` in the cloud (more info: https://github.com/ggerganov/llama.cpp/discussions/9669)
+
+To learn more about model quantization, [read this documentation](examples/quantize/README.md)
+
+## [`llama-cli`](examples/main)
+
+#### A CLI tool for accessing and experimenting with most of `llama.cpp`'s functionality.
+
+- <details open>
+    <summary>Run in conversation mode</summary>
+
+    Models with a built-in chat template will automatically activate conversation mode. If this doesn't occur, you can manually enable it by adding `-cnv` and specifying a suitable chat template with `--chat-template NAME`
 
     ```bash
-    zig build -Drelease-fast
+    llama-cli -m model.gguf
+
+    # > hi, who are you?
+    # Hi there! I'm your helpful assistant! I'm an AI-powered chatbot designed to assist and provide information to users like you. I'm here to help answer your questions, provide guidance, and offer support on a wide range of topics. I'm a friendly and knowledgeable AI, and I'm always happy to help with anything you need. What's on your mind, and how can I assist you today?
+    #
+    # > what is 1+1?
+    # Easy peasy! The answer to 1+1 is... 2!
     ```
 
-### Metal Build
-
-Using Metal allows the computation to be executed on the GPU for Apple devices:
-
-- Using `make`:
-
-  ```bash
-  LLAMA_METAL=1 make
-  ```
-
-- Using `CMake`:
-
-    ```bash
-    mkdir build-metal
-    cd build-metal
-    cmake -DLLAMA_METAL=ON ..
-    cmake --build . --config Release
-    ```
-
-When built with Metal support, you can enable GPU inference with the `--gpu-layers|-ngl` command-line argument.
-Any value larger than 0 will offload the computation to the GPU. For example:
-
-```bash
-./main -m ./models/7B/ggml-model-q4_0.bin -n 128 -ngl 1
-```
-
-### BLAS Build
-
-Building the program with BLAS support may lead to some performance improvements in prompt processing using batch sizes higher than 32 (the default is 512). BLAS doesn't affect the normal generation performance. There are currently three different implementations of it:
-
-- #### Accelerate Framework:
-
-  This is only available on Mac PCs and it's enabled by default. You can just build using the normal instructions.
-
-- #### OpenBLAS:
-
-  This provides BLAS acceleration using only the CPU. Make sure to have OpenBLAS installed on your machine.
-
-  - Using `make`:
-    - On Linux:
-      ```bash
-      make LLAMA_OPENBLAS=1
-      ```
-
-    - On Windows:
-
-      1. Download the latest fortran version of [w64devkit](https://github.com/skeeto/w64devkit/releases).
-      2. Download the latest version of [OpenBLAS for Windows](https://github.com/xianyi/OpenBLAS/releases).
-      3. Extract `w64devkit` on your pc.
-      4. From the OpenBLAS zip that you just downloaded copy `libopenblas.a`, located inside the `lib` folder, inside `w64devkit\x86_64-w64-mingw32\lib`.
-      5. From the same OpenBLAS zip copy the content of the `include` folder inside `w64devkit\x86_64-w64-mingw32\include`.
-      6. Run `w64devkit.exe`.
-      7. Use the `cd` command to reach the `llama.cpp` folder.
-      8. From here you can run:
-
-          ```bash
-          make LLAMA_OPENBLAS=1
-          ```
-
-  - Using `CMake` on Linux:
-
-      ```bash
-      mkdir build
-      cd build
-      cmake .. -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS
-      cmake --build . --config Release
-      ```
-
-- #### BLIS
-
-  Check [BLIS.md](docs/BLIS.md) for more information.
-
-- #### Intel MKL
-
-  By default, `LLAMA_BLAS_VENDOR` is set to `Generic`, so if you already sourced intel environment script and assign `-DLLAMA_BLAS=ON` in cmake, the mkl version of Blas will automatically been selected. You may also specify it by:
-
-  ```bash
-  mkdir build
-  cd build
-  cmake .. -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=Intel10_64lp -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx
-  cmake --build . --config Release
-  ```
-
-- #### cuBLAS
-
-  This provides BLAS acceleration using the CUDA cores of your Nvidia GPU. Make sure to have the CUDA toolkit installed. You can download it from your Linux distro's package manager or from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads).
-  - Using `make`:
-    ```bash
-    make LLAMA_CUBLAS=1
-    ```
-  - Using `CMake`:
-
-    ```bash
-    mkdir build
-    cd build
-    cmake .. -DLLAMA_CUBLAS=ON
-    cmake --build . --config Release
-    ```
-
-  The environment variable [`CUDA_VISIBLE_DEVICES`](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#env-vars) can be used to specify which GPU(s) will be used. The following compilation options are also available to tweak performance:
-
-  | Option                  | Legal values           | Default | Description |
-  |-------------------------|------------------------|---------|-------------|
-  | LLAMA_CUDA_DMMV_X       | Positive integer >= 32 |      32 | Number of values in x direction processed by the CUDA dequantization + matrix vector multiplication kernel per iteration. Increasing this value can improve performance on fast GPUs. Power of 2 heavily recommended. Does not affect k-quants. |
-  | LLAMA_CUDA_DMMV_Y       | Positive integer       |       1 | Block size in y direction for the CUDA dequantization + mul mat vec kernels. Increasing this value can improve performance on fast GPUs. Power of 2 recommended. Does not affect k-quants. |
-  | LLAMA_CUDA_DMMV_F16     | Boolean                |   false | If enabled, use half-precision floating point arithmetic for the CUDA dequantization + mul mat vec kernels. Can improve performance on relatively recent GPUs. |
-  | LLAMA_CUDA_KQUANTS_ITER | 1 or 2                 |       2 | Number of values processed per iteration and per CUDA thread for Q2_K and Q6_K quantization formats. Setting this value to 1 can improve performance for slow GPUs. |
-
-- #### CLBlast
-
-  OpenCL acceleration is provided by the matrix multiplication kernels from the [CLBlast](https://github.com/CNugteren/CLBlast) project and custom kernels for ggml that can generate tokens on the GPU.
-
-  You will need the [OpenCL SDK](https://github.com/KhronosGroup/OpenCL-SDK).
-    - For Ubuntu or Debian, the packages `opencl-headers`, `ocl-icd` may be needed.
-
-    - <details>
-        <summary>Installing the OpenCL SDK from source</summary>
-
-        ```sh
-        git clone --recurse-submodules https://github.com/KhronosGroup/OpenCL-SDK.git
-        mkdir OpenCL-SDK/build
-        cd OpenCL-SDK/build
-        cmake .. -DBUILD_DOCS=OFF \
-          -DBUILD_EXAMPLES=OFF \
-          -DBUILD_TESTING=OFF \
-          -DOPENCL_SDK_BUILD_SAMPLES=OFF \
-          -DOPENCL_SDK_TEST_SAMPLES=OFF
-        cmake --build . --config Release
-        cmake --install . --prefix /some/path
-        ```
-      </details>
-
-  Installing CLBlast: it may be found in your operating system's packages.
-
-  - <details>
-    <summary>If not, then installing from source:</summary>
-
-      ```sh
-      git clone https://github.com/CNugteren/CLBlast.git
-      mkdir CLBlast/build
-      cd CLBlast/build
-      cmake .. -DBUILD_SHARED_LIBS=OFF -DTUNERS=OFF
-      cmake --build . --config Release
-      cmake --install . --prefix /some/path
-      ```
-
-      Where `/some/path` is where the built library will be installed (default is `/usr/local`).
     </details>
 
-  Building:
+- <details>
+    <summary>Run in conversation mode with custom chat template</summary>
 
-  - Build with make:
-    ```sh
-    make LLAMA_CLBLAST=1
-    ```
-  - CMake:
-    ```sh
-    mkdir build
-    cd build
-    cmake .. -DLLAMA_CLBLAST=ON -DCLBlast_dir=/some/path
-    cmake --build . --config Release
+    ```bash
+    # use the "chatml" template (use -h to see the list of supported templates)
+    llama-cli -m model.gguf -cnv --chat-template chatml
+
+    # use a custom template
+    llama-cli -m model.gguf -cnv --in-prefix 'User: ' --reverse-prompt 'User:'
     ```
 
-  Running:
+    </details>
 
-  The CLBlast build supports `--gpu-layers|-ngl` like the CUDA version does.
+- <details>
+    <summary>Run simple text completion</summary>
 
-  To select the correct platform (driver) and device (GPU), you can use the environment variables `GGML_OPENCL_PLATFORM` and `GGML_OPENCL_DEVICE`.
-  The selection can be a number (starting from 0) or a text string to search:
+    To disable conversation mode explicitly, use `-no-cnv`
 
-  ```sh
-  GGML_OPENCL_PLATFORM=1 ./main ...
-  GGML_OPENCL_DEVICE=2 ./main ...
-  GGML_OPENCL_PLATFORM=Intel ./main ...
-  GGML_OPENCL_PLATFORM=AMD GGML_OPENCL_DEVICE=1 ./main ...
-  ```
+    ```bash
+    llama-cli -m model.gguf -p "I believe the meaning of life is" -n 128 -no-cnv
 
-  The default behavior is to find the first GPU device, but when it is an integrated GPU on a laptop, for instance, the selectors are useful.
-  Using the variables it is possible to select a CPU-based driver as well, if so desired.
+    # I believe the meaning of life is to find your own truth and to live in accordance with it. For me, this means being true to myself and following my passions, even if they don't align with societal expectations. I think that's what I love about yoga – it's not just a physical practice, but a spiritual one too. It's about connecting with yourself, listening to your inner voice, and honoring your own unique journey.
+    ```
 
-  You can get a list of platforms and devices from the `clinfo -l` command, etc.
+    </details>
 
-### Prepare Data & Run
+- <details>
+    <summary>Constrain the output with a custom grammar</summary>
 
-```bash
-# obtain the original LLaMA model weights and place them in ./models
-ls ./models
-65B 30B 13B 7B tokenizer_checklist.chk tokenizer.model
+    ```bash
+    llama-cli -m model.gguf -n 256 --grammar-file grammars/json.gbnf -p 'Request: schedule a call at 8pm; Command:'
 
-# install Python dependencies
-python3 -m pip install -r requirements.txt
+    # {"appointmentTime": "8pm", "appointmentDetails": "schedule a a call"}
+    ```
 
-# convert the 7B model to ggml FP16 format
-python3 convert.py models/7B/
+    The [grammars/](grammars/) folder contains a handful of sample grammars. To write your own, check out the [GBNF Guide](grammars/README.md).
 
-# quantize the model to 4-bits (using q4_0 method)
-./quantize ./models/7B/ggml-model-f16.bin ./models/7B/ggml-model-q4_0.bin q4_0
+    For authoring more complex JSON grammars, check out https://grammar.intrinsiclabs.ai/
 
-# run the inference
-./main -m ./models/7B/ggml-model-q4_0.bin -n 128
-```
-
-When running the larger models, make sure you have enough disk space to store all the intermediate files.
-
-### Memory/Disk Requirements
-
-As the models are currently fully loaded into memory, you will need adequate disk space to save them and sufficient RAM to load them. At the moment, memory and disk requirements are the same.
-
-| Model | Original size | Quantized size (4-bit) |
-|------:|--------------:|-----------------------:|
-|    7B |         13 GB |                 3.9 GB |
-|   13B |         24 GB |                 7.8 GB |
-|   30B |         60 GB |                19.5 GB |
-|   65B |        120 GB |                38.5 GB |
-
-### Quantization
-
-Several quantization methods are supported. They differ in the resulting model disk size and inference speed.
-
-| Model | Measure      | F16    | Q4_0   | Q4_1   | Q5_0   | Q5_1   | Q8_0   |
-|------:|--------------|-------:|-------:|-------:|-------:|-------:|-------:|
-|    7B | perplexity   | 5.9066 | 6.1565 | 6.0912 | 5.9862 | 5.9481 | 5.9070 |
-|    7B | file size    |  13.0G |   3.5G |   3.9G |   4.3G |   4.7G |   6.7G |
-|    7B | ms/tok @ 4th |    127 |     55 |     54 |     76 |     83 |     72 |
-|    7B | ms/tok @ 8th |    122 |     43 |     45 |     52 |     56 |     67 |
-|    7B | bits/weight  |   16.0 |    4.5 |    5.0 |    5.5 |    6.0 |    8.5 |
-|   13B | perplexity   | 5.2543 | 5.3860 | 5.3608 | 5.2856 | 5.2706 | 5.2548 |
-|   13B | file size    |  25.0G |   6.8G |   7.6G |   8.3G |   9.1G |    13G |
-|   13B | ms/tok @ 4th |      - |    103 |    105 |    148 |    160 |    131 |
-|   13B | ms/tok @ 8th |      - |     73 |     82 |     98 |    105 |    128 |
-|   13B | bits/weight  |   16.0 |    4.5 |    5.0 |    5.5 |    6.0 |    8.5 |
-
-### Perplexity (measuring model quality)
-
-You can use the `perplexity` example to measure perplexity over a given prompt (lower perplexity is better).
-For more information, see [https://huggingface.co/docs/transformers/perplexity](https://huggingface.co/docs/transformers/perplexity).
-
-The perplexity measurements in table above are done against the `wikitext2` test dataset (https://paperswithcode.com/dataset/wikitext-2), with context length of 512.
-The time per token is measured on a MacBook M1 Pro 32GB RAM using 4 and 8 threads.
-
-### Interactive mode
-
-If you want a more ChatGPT-like experience, you can run in interactive mode by passing `-i` as a parameter.
-In this mode, you can always interrupt generation by pressing Ctrl+C and entering one or more lines of text, which will be converted into tokens and appended to the current context. You can also specify a *reverse prompt* with the parameter `-r "reverse prompt string"`. This will result in user input being prompted whenever the exact tokens of the reverse prompt string are encountered in the generation. A typical use is to use a prompt that makes LLaMa emulate a chat between multiple users, say Alice and Bob, and pass `-r "Alice:"`.
-
-Here is an example of a few-shot interaction, invoked with the command
-
-```bash
-# default arguments using a 7B model
-./examples/chat.sh
-
-# advanced chat with a 13B model
-./examples/chat-13B.sh
-
-# custom arguments using a 13B model
-./main -m ./models/13B/ggml-model-q4_0.bin -n 256 --repeat_penalty 1.0 --color -i -r "User:" -f prompts/chat-with-bob.txt
-```
-
-Note the use of `--color` to distinguish between user input and generated text. Other parameters are explained in more detail in the [README](examples/main/README.md) for the `main` example program.
-
-![image](https://user-images.githubusercontent.com/1991296/224575029-2af3c7dc-5a65-4f64-a6bb-517a532aea38.png)
-
-### Persistent Interaction
-
-The prompt, user inputs, and model generations can be saved and resumed across calls to `./main` by leveraging `--prompt-cache` and `--prompt-cache-all`. The `./examples/chat-persistent.sh` script demonstrates this with support for long-running, resumable chat sessions. To use this example, you must provide a file to cache the initial chat prompt and a directory to save the chat session, and may optionally provide the same variables as `chat-13B.sh`. The same prompt cache can be reused for new chat sessions. Note that both prompt cache and chat directory are tied to the initial prompt (`PROMPT_TEMPLATE`) and the model file.
-
-```bash
-# Start a new chat
-PROMPT_CACHE_FILE=chat.prompt.bin CHAT_SAVE_DIR=./chat/default ./examples/chat-persistent.sh
-
-# Resume that chat
-PROMPT_CACHE_FILE=chat.prompt.bin CHAT_SAVE_DIR=./chat/default ./examples/chat-persistent.sh
-
-# Start a different chat with the same prompt/model
-PROMPT_CACHE_FILE=chat.prompt.bin CHAT_SAVE_DIR=./chat/another ./examples/chat-persistent.sh
-
-# Different prompt cache for different prompt/model
-PROMPT_TEMPLATE=./prompts/chat-with-bob.txt PROMPT_CACHE_FILE=bob.prompt.bin \
-    CHAT_SAVE_DIR=./chat/bob ./examples/chat-persistent.sh
-```
-
-### Instruction mode with Alpaca
-
-1. First, download the `ggml` Alpaca model into the `./models` folder
-2. Run the `main` tool like this:
-
-```
-./examples/alpaca.sh
-```
-
-Sample run:
-
-```
-== Running in interactive mode. ==
- - Press Ctrl+C to interject at any time.
- - Press Return to return control to LLaMa.
- - If you want to submit another line, end your input in '\'.
-
- Below is an instruction that describes a task. Write a response that appropriately completes the request.
-
-> How many letters are there in the English alphabet?
-There 26 letters in the English Alphabet
-> What is the most common way of transportation in Amsterdam?
-The majority (54%) are using public transit. This includes buses, trams and metros with over 100 lines throughout the city which make it very accessible for tourists to navigate around town as well as locals who commute by tram or metro on a daily basis
-> List 5 words that start with "ca".
-cadaver, cauliflower, cabbage (vegetable), catalpa (tree) and Cailleach.
->
-```
-
-### Using [OpenLLaMA](https://github.com/openlm-research/open_llama)
-
-OpenLLaMA is an openly licensed reproduction of Meta's original LLaMA model. It uses the same architecture and is a drop-in replacement for the original LLaMA weights.
-
-- Download the [3B](https://huggingface.co/openlm-research/open_llama_3b), [7B](https://huggingface.co/openlm-research/open_llama_7b), or [13B](https://huggingface.co/openlm-research/open_llama_13b) model from Hugging Face.
-- Convert the model to ggml FP16 format using `python convert.py <path to OpenLLaMA directory>`
-
-### Using [GPT4All](https://github.com/nomic-ai/gpt4all)
-
-- Obtain the `tokenizer.model` file from LLaMA model and put it to `models`
-- Obtain the `added_tokens.json` file from Alpaca model and put it to `models`
-- Obtain the `gpt4all-lora-quantized.bin` file from GPT4All model and put it to `models/gpt4all-7B`
-- It is distributed in the old `ggml` format which is now obsoleted
-- You have to convert it to the new format using `convert.py`:
-
-```bash
-python3 convert.py models/gpt4all-7B/gpt4all-lora-quantized.bin
-```
-
-- You can now use the newly generated `models/gpt4all-7B/ggml-model-q4_0.bin` model in exactly the same way as all other models
-
-- The newer GPT4All-J model is not yet supported!
-
-### Using Pygmalion 7B & Metharme 7B
-
-- Obtain the [LLaMA weights](#obtaining-the-facebook-llama-original-model-and-stanford-alpaca-model-data)
-- Obtain the [Pygmalion 7B](https://huggingface.co/PygmalionAI/pygmalion-7b/) or [Metharme 7B](https://huggingface.co/PygmalionAI/metharme-7b) XOR encoded weights
-- Convert the LLaMA model with [the latest HF convert script](https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/convert_llama_weights_to_hf.py)
-- Merge the XOR files with the converted LLaMA weights by running the [xor_codec](https://huggingface.co/PygmalionAI/pygmalion-7b/blob/main/xor_codec.py) script
-- Convert to `ggml` format using the `convert.py` script in this repo:
-```bash
-python3 convert.py pygmalion-7b/ --outtype q4_1
-```
-> The Pygmalion 7B & Metharme 7B weights are saved in [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) precision. If you wish to convert to `ggml` without quantizating, please specify the `--outtype` as `f32` instead of `f16`.
+    </details>
 
 
-### Obtaining the Facebook LLaMA original model and Stanford Alpaca model data
+## [`llama-server`](examples/server)
 
-- **Under no circumstances should IPFS, magnet links, or any other links to model downloads be shared anywhere in this repository, including in issues, discussions, or pull requests. They will be immediately deleted.**
-- The LLaMA models are officially distributed by Facebook and will **never** be provided through this repository.
-- Refer to [Facebook's LLaMA repository](https://github.com/facebookresearch/llama/pull/73/files) if you need to request access to the model data.
+#### A lightweight, [OpenAI API](https://github.com/openai/openai-openapi) compatible, HTTP server for serving LLMs.
 
-### Verifying the model files
+- <details open>
+    <summary>Start a local HTTP server with default configuration on port 8080</summary>
 
-Please verify the [sha256 checksums](SHA256SUMS) of all downloaded model files to confirm that you have the correct model data files before creating an issue relating to your model files.
-- The following python script will verify if you have all possible latest files in your self-installed `./models` subdirectory:
+    ```bash
+    llama-server -m model.gguf --port 8080
 
-```bash
-# run the verification script
-python3 .\scripts\verify-checksum-models.py
-```
+    # Basic web UI can be accessed via browser: http://localhost:8080
+    # Chat completion endpoint: http://localhost:8080/v1/chat/completions
+    ```
 
-- On linux or macOS it is also possible to run the following commands to verify if you have all possible latest files in your self-installed `./models` subdirectory:
-    - On Linux: `sha256sum --ignore-missing -c SHA256SUMS`
-    - on macOS: `shasum -a 256 --ignore-missing -c SHA256SUMS`
+    </details>
 
-### Seminal papers and background on the models
+- <details>
+    <summary>Support multiple-users and parallel decoding</summary>
+
+    ```bash
+    # up to 4 concurrent requests, each with 4096 max context
+    llama-server -m model.gguf -c 16384 -np 4
+    ```
+
+    </details>
+
+- <details>
+    <summary>Enable speculative decoding</summary>
+
+    ```bash
+    # the draft.gguf model should be a small variant of the target model.gguf
+    llama-server -m model.gguf -md draft.gguf
+    ```
+
+    </details>
+
+- <details>
+    <summary>Serve an embedding model</summary>
+
+    ```bash
+    # use the /embedding endpoint
+    llama-server -m model.gguf --embedding --pooling cls -ub 8192
+    ```
+
+    </details>
+
+- <details>
+    <summary>Serve a reranking model</summary>
+
+    ```bash
+    # use the /reranking endpoint
+    llama-server -m model.gguf --reranking
+    ```
+
+    </details>
+
+- <details>
+    <summary>Constrain all outputs with a grammar</summary>
+
+    ```bash
+    # custom grammar
+    llama-server -m model.gguf --grammar-file grammar.gbnf
+
+    # JSON
+    llama-server -m model.gguf --grammar-file grammars/json.gbnf
+    ```
+
+    </details>
+
+
+## [`llama-perplexity`](examples/perplexity)
+
+#### A tool for measuring the perplexity [^1][^2] (and other quality metrics) of a model over a given text.
+
+- <details open>
+    <summary>Measure the perplexity over a text file</summary>
+
+    ```bash
+    llama-perplexity -m model.gguf -f file.txt
+
+    # [1]15.2701,[2]5.4007,[3]5.3073,[4]6.2965,[5]5.8940,[6]5.6096,[7]5.7942,[8]4.9297, ...
+    # Final estimate: PPL = 5.4007 +/- 0.67339
+    ```
+
+    </details>
+
+- <details>
+    <summary>Measure KL divergence</summary>
+
+    ```bash
+    # TODO
+    ```
+
+    </details>
+
+[^1]: [examples/perplexity/README.md](examples/perplexity/README.md)
+[^2]: [https://huggingface.co/docs/transformers/perplexity](https://huggingface.co/docs/transformers/perplexity)
+
+## [`llama-bench`](examples/llama-bench)
+
+#### Benchmark the performance of the inference for various parameters.
+
+- <details open>
+    <summary>Run default benchmark</summary>
+
+    ```bash
+    llama-bench -m model.gguf
+
+    # Output:
+    # | model               |       size |     params | backend    | threads |          test |                  t/s |
+    # | ------------------- | ---------: | ---------: | ---------- | ------: | ------------: | -------------------: |
+    # | qwen2 1.5B Q4_0     | 885.97 MiB |     1.54 B | Metal,BLAS |      16 |         pp512 |      5765.41 ± 20.55 |
+    # | qwen2 1.5B Q4_0     | 885.97 MiB |     1.54 B | Metal,BLAS |      16 |         tg128 |        197.71 ± 0.81 |
+    #
+    # build: 3e0ba0e60 (4229)
+    ```
+
+    </details>
+
+## [`llama-run`](examples/run)
+
+#### A comprehensive example for running `llama.cpp` models. Useful for inferencing. Used with RamaLama [^3].
+
+- <details>
+    <summary>Run a model with a specific prompt (by default it's pulled from Ollama registry)</summary>
+
+    ```bash
+    llama-run granite-code
+    ```
+
+    </details>
+
+[^3]: [RamaLama](https://github.com/containers/ramalama)
+
+## [`llama-simple`](examples/simple)
+
+#### A minimal example for implementing apps with `llama.cpp`. Useful for developers.
+
+- <details>
+    <summary>Basic text completion</summary>
+
+    ```bash
+    llama-simple -m model.gguf
+
+    # Hello my name is Kaitlyn and I am a 16 year old girl. I am a junior in high school and I am currently taking a class called "The Art of
+    ```
+
+    </details>
+
+
+## Contributing
+
+- Contributors can open PRs
+- Collaborators can push to branches in the `llama.cpp` repo and merge PRs into the `master` branch
+- Collaborators will be invited based on contributions
+- Any help with managing issues, PRs and projects is very appreciated!
+- See [good first issues](https://github.com/ggerganov/llama.cpp/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) for tasks suitable for first contributions
+- Read the [CONTRIBUTING.md](CONTRIBUTING.md) for more information
+- Make sure to read this: [Inference at the edge](https://github.com/ggerganov/llama.cpp/discussions/205)
+- A bit of backstory for those who are interested: [Changelog podcast](https://changelog.com/podcast/532)
+
+## Other documentation
+
+- [main (cli)](examples/main/README.md)
+- [server](examples/server/README.md)
+- [GBNF grammars](grammars/README.md)
+
+#### Development documentation
+
+- [How to build](docs/build.md)
+- [Running on Docker](docs/docker.md)
+- [Build on Android](docs/android.md)
+- [Performance troubleshooting](docs/development/token_generation_performance_tips.md)
+- [GGML tips & tricks](https://github.com/ggerganov/llama.cpp/wiki/GGML-Tips-&-Tricks)
+
+#### Seminal papers and background on the models
 
 If your issue is with model generation quality, then please at least scan the following links and papers to understand the limitations of LLaMA models. This is especially important when choosing an appropriate model size and appreciating both the significant and subtle differences between LLaMA models and ChatGPT:
 - LLaMA:
@@ -618,136 +511,5 @@ If your issue is with model generation quality, then please at least scan the fo
     - [Aligning language models to follow instructions](https://openai.com/research/instruction-following)
     - [Training language models to follow instructions with human feedback](https://arxiv.org/abs/2203.02155)
 
-#### How to run
+#### References
 
-1. Download/extract: https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-raw-v1.zip?ref=salesforce-research
-2. Run `./perplexity -m models/7B/ggml-model-q4_0.bin -f wiki.test.raw`
-3. Output:
-```
-perplexity : calculating perplexity over 655 chunks
-24.43 seconds per pass - ETA 4.45 hours
-[1]4.5970,[2]5.1807,[3]6.0382,...
-```
-And after 4.45 hours, you will have the final perplexity.
-
-### Android
-
-#### Building the Project using Android NDK
-You can easily run `llama.cpp` on Android device with [termux](https://termux.dev/).
-
-First, install the essential packages for termux:
-```
-pkg install clang wget git cmake
-```
-Second, obtain the [Android NDK](https://developer.android.com/ndk) and then build with CMake:
-```
-$ mkdir build-android
-$ cd build-android
-$ export NDK=<your_ndk_directory>
-$ cmake -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-23 -DCMAKE_C_FLAGS=-march=armv8.4a+dotprod ..
-$ make
-```
-Install [termux](https://termux.dev/) on your device and run `termux-setup-storage` to get access to your SD card.
-Finally, copy the `llama` binary and the model files to your device storage. Here is a demo of an interactive session running on Pixel 5 phone:
-
-https://user-images.githubusercontent.com/271616/225014776-1d567049-ad71-4ef2-b050-55b0b3b9274c.mp4
-
-#### Building the Project using Termux (F-Droid)
-Termux from F-Droid offers an alternative route to execute the project on an Android device. This method empowers you to construct the project right from within the terminal, negating the requirement for a rooted device or SD Card.
-
-Outlined below are the directives for installing the project using OpenBLAS and CLBlast. This combination is specifically designed to deliver peak performance on recent devices that feature a GPU.
-
-If you opt to utilize OpenBLAS, you'll need to install the corresponding package.
-```
-apt install libopenblas
-```
-
-Subsequently, if you decide to incorporate CLBlast, you'll first need to install the requisite OpenCL packages:
-```
-apt install ocl-icd opencl-headers opencl-clhpp clinfo
-```
-
-In order to compile CLBlast, you'll need to first clone the respective Git repository, which can be found at this URL: https://github.com/CNugteren/CLBlast. Alongside this, clone this repository into your home directory. Once this is done, navigate to the CLBlast folder and execute the commands detailed below:
-```
-cmake .
-make
-cp libclblast.so* $PREFIX/lib
-cp ./include/clblast.h ../llama.cpp
-```
-
-Following the previous steps, navigate to the LlamaCpp directory. To compile it with OpenBLAS and CLBlast, execute the command provided below:
-```
-cp /data/data/com.termux/files/usr/include/openblas/cblas.h .
-cp /data/data/com.termux/files/usr/include/openblas/openblas_config.h .
-make LLAMA_CLBLAST=1 //(sometimes you need to run this command twice)
-```
-
-Upon completion of the aforementioned steps, you will have successfully compiled the project. To run it using CLBlast, a slight adjustment is required: a command must be issued to direct the operations towards your device's physical GPU, rather than the virtual one. The necessary command is detailed below:
-```
-GGML_OPENCL_PLATFORM=0
-GGML_OPENCL_DEVICE=0
-export LD_LIBRARY_PATH=/vendor/lib64:$LD_LIBRARY_PATH
-```
-
-(Note: some Android devices, like the Zenfone 8, need the following command instead - "export LD_LIBRARY_PATH=/system/vendor/lib64:$LD_LIBRARY_PATH". Source: https://www.reddit.com/r/termux/comments/kc3ynp/opencl_working_in_termux_more_in_comments/ )
-
-For easy and swift re-execution, consider documenting this final part in a .sh script file. This will enable you to rerun the process with minimal hassle.
-
-Place your desired model into the `/llama.cpp/models/` directory and execute the `./main (...)` script.
-
-### Docker
-
-#### Prerequisites
-* Docker must be installed and running on your system.
-* Create a folder to store big models & intermediate files (ex. /llama/models)
-
-#### Images
-We have two Docker images available for this project:
-
-1. `ghcr.io/ggerganov/llama.cpp:full`: This image includes both the main executable file and the tools to convert LLaMA models into ggml and convert into 4-bit quantization.
-2. `ghcr.io/ggerganov/llama.cpp:light`: This image only includes the main executable file.
-
-#### Usage
-
-The easiest way to download the models, convert them to ggml and optimize them is with the --all-in-one command which includes the full docker image.
-
-Replace `/path/to/models` below with the actual path where you downloaded the models.
-
-```bash
-docker run -v /path/to/models:/models ghcr.io/ggerganov/llama.cpp:full --all-in-one "/models/" 7B
-```
-
-On completion, you are ready to play!
-
-```bash
-docker run -v /path/to/models:/models ghcr.io/ggerganov/llama.cpp:full --run -m /models/7B/ggml-model-q4_0.bin -p "Building a website can be done in 10 simple steps:" -n 512
-```
-
-or with a light image:
-
-```bash
-docker run -v /path/to/models:/models ghcr.io/ggerganov/llama.cpp:light -m /models/7B/ggml-model-q4_0.bin -p "Building a website can be done in 10 simple steps:" -n 512
-```
-
-### Contributing
-
-- Contributors can open PRs
-- Collaborators can push to branches in the `llama.cpp` repo and merge PRs into the `master` branch
-- Collaborators will be invited based on contributions
-- Any help with managing issues and PRs is very appreciated!
-- Make sure to read this: [Inference at the edge](https://github.com/ggerganov/llama.cpp/discussions/205)
-- A bit of backstory for those who are interested: [Changelog podcast](https://changelog.com/podcast/532)
-
-### Coding guidelines
-
-- Avoid adding third-party dependencies, extra files, extra headers, etc.
-- Always consider cross-compatibility with other operating systems and architectures
-- Avoid fancy looking modern STL constructs, use basic `for` loops, avoid templates, keep it simple
-- There are no strict rules for the code style, but try to follow the patterns in the code (indentation, spaces, etc.). Vertical alignment makes things more readable and easier to batch edit
-- Clean-up any trailing whitespaces, use 4 spaces for indentation, brackets on the same line, `void * ptr`, `int & a`
-- See [good first issues](https://github.com/ggerganov/llama.cpp/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) for tasks suitable for first contributions
-
-### Docs
-
-- [GGML tips & tricks](https://github.com/ggerganov/llama.cpp/wiki/GGML-Tips-&-Tricks)
-- [Performance troubleshooting](./docs/token_generation_performance_tips.md)

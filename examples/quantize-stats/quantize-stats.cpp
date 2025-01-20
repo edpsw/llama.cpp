@@ -1,8 +1,7 @@
 #include "ggml.h"
-#include "build-info.h"
-
-#define LLAMA_API_INTERNAL
 #include "llama.h"
+#include "llama-context.h"
+#include "common.h"
 
 #include <algorithm>
 #include <cassert>
@@ -10,11 +9,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <map>
 #include <numeric>
 #include <regex>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -24,7 +21,7 @@
 #endif
 
 struct quantize_stats_params {
-    std::string model = "models/7B/ggml-model-f16.bin";
+    std::string model = DEFAULT_MODEL_PATH;
     bool verbose = false;
     bool per_layer_stats = false;
     bool print_histogram = false;
@@ -34,8 +31,8 @@ struct quantize_stats_params {
     std::vector<enum ggml_type> include_types;
 };
 
-const size_t HISTOGRAM_BUCKETS = 150;
-const double HISTOGRAM_RANGE = 0.03;
+constexpr size_t HISTOGRAM_BUCKETS = 150;
+constexpr double HISTOGRAM_RANGE = 0.03;
 
 struct error_stats {
     size_t num_samples;
@@ -44,8 +41,7 @@ struct error_stats {
     uint64_t error_histogram[HISTOGRAM_BUCKETS];
 };
 
-
-void quantize_stats_print_usage(int /*argc*/, char ** argv) {
+static void quantize_stats_print_usage(int /*argc*/, char ** argv) {
     quantize_stats_params params;
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
     fprintf(stderr, "\n");
@@ -71,7 +67,7 @@ void quantize_stats_print_usage(int /*argc*/, char ** argv) {
 }
 
 // Check if a layer is included/excluded by command line
-bool layer_included(const quantize_stats_params params, const std::string & layer) {
+static bool layer_included(const quantize_stats_params & params, const std::string & layer) {
     for (const auto& excluded : params.exclude_layers) {
         if (std::regex_search(layer, std::regex(excluded))) {
             return false;
@@ -86,7 +82,7 @@ bool layer_included(const quantize_stats_params params, const std::string & laye
 }
 
 // Update error statistics given vectors with the before/after result of quantization
-void update_error_stats(int64_t nelements, const float * input, const float * output, error_stats & stats) {
+static void update_error_stats(int64_t nelements, const float * input, const float * output, error_stats & stats) {
     for (int64_t i = 0; i < nelements; i++) {
         double diff = input[i] - output[i];
         stats.total_error += diff * diff;
@@ -96,14 +92,14 @@ void update_error_stats(int64_t nelements, const float * input, const float * ou
     stats.num_samples += nelements;
 }
 
-void combine_error_stats(error_stats & into, const error_stats & from) {
+static void combine_error_stats(error_stats & into, const error_stats & from) {
     into.num_samples += from.num_samples;
     into.total_error += from.total_error;
     if (from.max_error > into.max_error) into.max_error = from.max_error;
     for (size_t i=0; i<HISTOGRAM_BUCKETS; ++i) into.error_histogram[i] += from.error_histogram[i];
 }
 
-double find_quantile(const error_stats & stats, double quantile) {
+static double find_quantile(const error_stats & stats, double quantile) {
     double sum = std::accumulate(std::begin(stats.error_histogram), std::end(stats.error_histogram), 0.0);
 
     double accum = 0;
@@ -116,7 +112,7 @@ double find_quantile(const error_stats & stats, double quantile) {
     return INFINITY;
 }
 
-void print_error_stats(const std::string & name, const error_stats & stats, bool print_histogram) {
+static void print_error_stats(const std::string & name, const error_stats & stats, bool print_histogram) {
     double rmse = sqrt(stats.total_error / (double) stats.num_samples);
     double median = find_quantile(stats, .5);
     double pct95 = find_quantile(stats, .95);
@@ -143,17 +139,10 @@ static bool tensor_is_contiguous(const struct ggml_tensor * tensor) {
         tensor->nb[3] == tensor->nb[2]*tensor->ne[2];
 }
 
-void test_roundtrip_on_chunk(
-        const ggml_tensor * layer,
-        int64_t offset,
-        int64_t chunk_size,
-        const quantize_fns_t & qfns,
-        bool use_reference,
-        float * input_scratch,
-        char * quantized_scratch,
-        float * output_scratch,
-        error_stats & stats) {
-
+static void test_roundtrip_on_chunk(
+    const ggml_tensor * layer, int64_t offset, int64_t chunk_size, const ggml_type_traits & qfns, const ggml_type_traits_cpu & qfns_cpu, bool use_reference,
+    float * input_scratch, char * quantized_scratch, float * output_scratch, error_stats & stats
+) {
     if (layer->type == GGML_TYPE_F16) {
         for (int i = 0; i < chunk_size; i++) {
             input_scratch[i] = ggml_get_f32_1d(layer, i + offset);
@@ -163,29 +152,22 @@ void test_roundtrip_on_chunk(
     }
 
     if (use_reference) {
-        qfns.quantize_row_q_reference(input_scratch, quantized_scratch, chunk_size);
+        qfns.from_float_ref(input_scratch, quantized_scratch, chunk_size);
     } else {
-        qfns.quantize_row_q(input_scratch, quantized_scratch, chunk_size);
+        qfns_cpu.from_float(input_scratch, quantized_scratch, chunk_size);
     }
-    qfns.dequantize_row_q(quantized_scratch, output_scratch, chunk_size);
+    qfns.to_float(quantized_scratch, output_scratch, chunk_size);
 
     update_error_stats(chunk_size, input_scratch, output_scratch, stats);
 }
 
 
 // Run quantization function for a single layer and update error stats
-void test_roundtrip_on_layer(
-        std::string & name,
-        bool print_layer_stats,
-        const quantize_fns_t & qfns,
-        bool use_reference,
-        const ggml_tensor * layer,
-        std::vector<float> & input_scratch,
-        std::vector<char> & quantized_scratch,
-        std::vector<float> & output_scratch,
-        error_stats & total_error,
-        int max_thread = 0) {
-
+static void test_roundtrip_on_layer(
+    std::string & name, bool print_layer_stats, const ggml_type_traits & qfns, const ggml_type_traits_cpu & qfns_cpu, bool use_reference,
+    const ggml_tensor * layer, std::vector<float> & input_scratch, std::vector<char> & quantized_scratch,
+    std::vector<float> & output_scratch, error_stats & total_error, int max_thread = 0
+) {
     assert(tensor_is_contiguous(layer));
     error_stats layer_error {};
     uint64_t nelements = ggml_nelements(layer);
@@ -203,13 +185,13 @@ void test_roundtrip_on_layer(
     int num_chunks = (nelements + chunk_size - 1)/chunk_size;
 
     if (num_chunks < 2 || max_thread < 2) {
-        test_roundtrip_on_chunk(layer, 0, nelements, qfns, use_reference, input_scratch_ptr, quantized_scratch.data(),
+        test_roundtrip_on_chunk(layer, 0, nelements, qfns, qfns_cpu, use_reference, input_scratch_ptr, quantized_scratch.data(),
                 output_scratch.data(), print_layer_stats ? layer_error : total_error);
     } else {
         auto & stats = print_layer_stats ? layer_error : total_error;
         std::mutex mutex;
         uint64_t counter = 0;
-        auto compute = [&mutex, &counter, &stats, &qfns, nelements, layer, use_reference, input_scratch_ptr,
+        auto compute = [&mutex, &counter, &stats, &qfns, &qfns_cpu, nelements, layer, use_reference, input_scratch_ptr,
              &quantized_scratch, &output_scratch, chunk_size] () {
             error_stats local_stats {};
             while (true) {
@@ -221,7 +203,7 @@ void test_roundtrip_on_layer(
                 }
                 lock.unlock();
                 uint64_t chunk = offset + chunk_size < nelements ? chunk_size : nelements - offset;
-                test_roundtrip_on_chunk(layer, offset, chunk, qfns, use_reference, input_scratch_ptr + offset,
+                test_roundtrip_on_chunk(layer, offset, chunk, qfns, qfns_cpu, use_reference, input_scratch_ptr + offset,
                         quantized_scratch.data() + 4*offset, output_scratch.data() + offset, local_stats);
             }
         };
@@ -273,13 +255,13 @@ int main(int argc, char ** argv) {
                 invalid_param = true;
                 break;
             }
-            params.include_layers.push_back(argv[i]);
+            params.include_layers.emplace_back(argv[i]);
         } else if (arg == "-L" || arg == "--exclude-layer") {
             if (++i >= argc) {
                 invalid_param = true;
                 break;
             }
-            params.exclude_layers.push_back(argv[i]);
+            params.exclude_layers.emplace_back(argv[i]);
         } else if (arg == "-t" || arg == "--type") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -314,7 +296,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    fprintf(stderr, "%s: build = %d (%s)\n", __func__, BUILD_NUMBER, BUILD_COMMIT);
+    print_build_info();
 
     // load the model
     fprintf(stderr, "Loading model\n");
@@ -324,36 +306,35 @@ int main(int argc, char ** argv) {
     llama_context * ctx;
 
     {
-        auto lparams = llama_context_default_params();
+        auto mparams = llama_model_default_params();
+        mparams.use_mlock  = false;
 
-        lparams.n_ctx      = 256;
-        lparams.seed       = 1;
-        lparams.f16_kv     = false;
-        lparams.use_mlock  = false;
-
-        model = llama_load_model_from_file(params.model.c_str(), lparams);
+        model = llama_model_load_from_file(params.model.c_str(), mparams);
 
         if (model == NULL) {
             fprintf(stderr, "%s: error: failed to load model '%s'\n", __func__, params.model.c_str());
             return 1;
         }
 
-        ctx = llama_new_context_with_model(model, lparams);
+        auto cparams = llama_context_default_params();
+        cparams.n_ctx = 256;
+
+        ctx = llama_init_from_model(model, cparams);
 
         if (ctx == NULL) {
             fprintf(stderr, "%s: error: failed to create context with model '%s'\n", __func__, params.model.c_str());
-            llama_free_model(model);
+            llama_model_free(model);
             return 1;
         }
     }
 
-    const auto &tensors = llama_internal_get_tensor_map(ctx);
+    const auto & tensors = llama_internal_get_tensor_map(ctx);
 
     // check layer tensors
     int included_layers = 0;
     int64_t max_nelements = 0;
     bool is_f16 = false;
-    for (const auto& kv_tensor : tensors) {
+    for (const auto & kv_tensor : tensors) {
         if (!layer_included(params, kv_tensor.first)) {
             continue;
         }
@@ -366,7 +347,7 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "%s: error: Quantization should be tested with a float model, "
                 "this model contains already quantized layers (%s is type %d)\n", __func__, kv_tensor.first.c_str(), kv_tensor.second->type);
             llama_free(ctx);
-            llama_free_model(model);
+            llama_model_free(model);
             return 1;
         }
         included_layers++;
@@ -388,15 +369,18 @@ int main(int argc, char ** argv) {
         if (!params.include_types.empty() && std::find(params.include_types.begin(), params.include_types.end(), i) == params.include_types.end()) {
             continue;
         }
-        quantize_fns_t qfns = ggml_internal_get_quantize_fn(i);
-        if (qfns.quantize_row_q && qfns.dequantize_row_q) {
+        const auto * qfns     = ggml_get_type_traits(type);
+        const auto * qfns_cpu = ggml_get_type_traits_cpu(type);
+        if (qfns_cpu->from_float && qfns->to_float) {
             if (params.verbose) {
                 printf("testing %s ...\n",  ggml_type_name(type));
             }
 
+            ggml_quantize_init(type);
+
             error_stats global_stats {};
 
-            for (const auto& kv_tensor : tensors) {
+            for (const auto & kv_tensor : tensors) {
                 if (!layer_included(params, kv_tensor.first)) {
                     continue;
                 }
@@ -408,7 +392,7 @@ int main(int argc, char ** argv) {
                 test_roundtrip_on_layer(
                         layer_name,
                         params.per_layer_stats,
-                        qfns,
+                        *qfns, *qfns_cpu,
                         params.reference,
                         kv_tensor.second,
                         input_scratch,
@@ -425,7 +409,7 @@ int main(int argc, char ** argv) {
 
 
     llama_free(ctx);
-    llama_free_model(model);
+    llama_model_free(model);
     // report timing
     {
         const int64_t t_main_end_us = ggml_time_us();
